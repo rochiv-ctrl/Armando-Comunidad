@@ -530,7 +530,7 @@ function ChatContent() {
                             {msg.propuesta_enlace && <p>{renderTextoSeguro(msg.propuesta_enlace)}</p>}
                             <span className={`inline-block text-[10px] font-bold px-2.5 py-1 rounded-full ${est.clase}`}>{est.label}</span>
 
-                            {msg.estado_propuesta === 'pendiente' && soyTutor === false && !esMio && (
+                            {msg.estado_propuesta === 'pendiente' && soyTutor === false && !esMio && claseNoEmpezo(msg) && (
                               <div className="flex gap-2 pt-1">
                                 <button disabled={ocupado} onClick={() => responderPropuesta(msg, 'aceptar')} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl disabled:opacity-50">
                                   Aceptar (reserva {pub?.horas || 1} h)
@@ -540,7 +540,10 @@ function ChatContent() {
                                 </button>
                               </div>
                             )}
-                            {msg.estado_propuesta === 'pendiente' && esMio && (
+                            {msg.estado_propuesta === 'pendiente' && !claseNoEmpezo(msg) && (
+                              <p className="text-[10px] font-bold text-rose-600">Esta propuesta venció.</p>
+                            )}
+                            {msg.estado_propuesta === 'pendiente' && esMio && claseNoEmpezo(msg) && (
                               <p className="text-[10px] opacity-75">Esperando que el alumno responda.</p>
                             )}
                             {msg.estado_propuesta === 'aceptada' && claseNoEmpezo(msg) && (

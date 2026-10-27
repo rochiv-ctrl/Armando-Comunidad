@@ -278,7 +278,7 @@ function PerfilContenido() {
                 )}
               </div>
               <p className="text-xs text-slate-500 font-semibold">
-                {perfil.carrera} {perfil.padron ? `• Registro: ${perfil.padron}` : ''}
+                {perfil.carrera} {esMiPerfil && perfil.padron ? `• Registro: ${perfil.padron}` : ''}
               </p>
 
               <div className="flex flex-wrap items-center gap-4 pt-2 text-xs font-bold text-slate-700">

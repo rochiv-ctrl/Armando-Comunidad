@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 
@@ -18,7 +19,7 @@ const CARRERAS = [
   'Tecnicatura Universitaria en Gestión y Análisis de Datos en Organizaciones',
 ];
 
-const MAX_FOTO_MB = 3;
+const LARGO_MINIMO_CONTRASEÑA = 8;
 
 export default function AuthPage() {
   const router = useRouter();
@@ -31,39 +32,32 @@ export default function AuthPage() {
   const [carrera, setCarrera] = useState(CARRERAS[1]);
   const [registro, setRegistro] = useState('');
   const [esIngresante, setEsIngresante] = useState(false);
-  const [foto, setFoto] = useState<File | null>(null);
-  const [fotoPreview, setFotoPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [correoEnviadoA, setCorreoEnviadoA] = useState<string | null>(null);
 
-  const handleFotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const archivo = e.target.files?.[0];
-    if (!archivo) return;
-
-    if (!archivo.type.startsWith('image/')) {
-      alert('El archivo tiene que ser una imagen (JPG, PNG, WEBP...).');
-      e.target.value = '';
-      return;
-    }
-    if (archivo.size > MAX_FOTO_MB * 1024 * 1024) {
-      alert(`La foto no puede pesar más de ${MAX_FOTO_MB} MB.`);
-      e.target.value = '';
-      return;
-    }
-
-    if (fotoPreview) URL.revokeObjectURL(fotoPreview);
-    setFoto(archivo);
-    setFotoPreview(URL.createObjectURL(archivo));
-  };
+  // Si ya hay una sesión (por ejemplo, al volver del enlace de confirmación del correo), se entra directo
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) router.replace('/dashboard');
+    });
+  }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     if (isLogin) {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
 
       if (error) {
-        alert('Error al iniciar sesión: ' + error.message);
+        const msg = error.message.toLowerCase();
+        if (msg.includes('email not confirmed')) {
+          alert('Todavía no confirmaste tu correo. Abrí el mensaje que te enviamos y tocá «Confirmar mi cuenta».');
+        } else if (msg.includes('invalid login credentials')) {
+          alert('El correo o la contraseña no son correctos.');
+        } else {
+          alert('Error al iniciar sesión: ' + error.message);
+        }
       } else {
         router.push('/dashboard');
       }
@@ -78,8 +72,8 @@ export default function AuthPage() {
       return;
     }
 
-    if (!foto) {
-      alert('La foto de perfil es obligatoria.');
+    if (password.length < LARGO_MINIMO_CONTRASEÑA) {
+      alert(`La contraseña tiene que tener al menos ${LARGO_MINIMO_CONTRASEÑA} caracteres.`);
       setLoading(false);
       return;
     }
@@ -94,6 +88,7 @@ export default function AuthPage() {
       email: email.trim(),
       password,
       options: {
+        emailRedirectTo: `${window.location.origin}/auth`,
         data: {
           nombre: nombre.trim(),
           carrera,
@@ -109,43 +104,45 @@ export default function AuthPage() {
       return;
     }
 
-    const userId = data.user?.id;
-
-    // Con sesión activa podemos subir la foto de inmediato
-    if (data.session && userId) {
-      const extension = (foto.name.split('.').pop() || 'jpg').toLowerCase();
-      const ruta = `${userId}/${Date.now()}.${extension}`;
-
-      const { error: errorSubida } = await supabase.storage
-        .from('avatars')
-        .upload(ruta, foto, { upsert: true, contentType: foto.type });
-
-      if (errorSubida) {
-        alert(
-          'Tu cuenta se creó, pero no se pudo subir la foto: ' +
-            errorSubida.message +
-            '. Podés cambiarla desde tu perfil.'
-        );
-      } else {
-        const { data: publica } = supabase.storage.from('avatars').getPublicUrl(ruta);
-        const { error: errorPerfil } = await supabase
-          .from('profiles')
-          .update({ avatar_url: publica.publicUrl })
-          .eq('id', userId);
-
-        if (errorPerfil) {
-          alert('La foto se subió, pero no se pudo asociar a tu perfil: ' + errorPerfil.message);
-        }
-      }
-
+    if (data.session) {
+      // La verificación de correo está desactivada: se entra directo.
+      // La foto de perfil se pide en la primera pantalla de la app.
       router.push('/dashboard');
     } else {
-      alert('¡Registro exitoso! Iniciá sesión y cargá tu foto de perfil desde tu perfil.');
-      setIsLogin(true);
+      // La verificación de correo está activada: hay que confirmar desde el mail.
+      setCorreoEnviadoA(email.trim());
     }
 
     setLoading(false);
   };
+
+  // Pantalla de "revisá tu correo"
+  if (correoEnviadoA) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white border border-slate-200/80 p-8 rounded-3xl shadow-sm space-y-5 text-center">
+          <img src="/logo.png" alt="Armando Comunidad" className="w-20 h-20 object-contain mx-auto" />
+          <h1 className="text-xl font-black text-slate-900">Revisá tu correo</h1>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            Te enviamos un mensaje a <span className="font-bold text-slate-900">{correoEnviadoA}</span>. Abrilo y
+            tocá <span className="font-bold">«Confirmar mi cuenta»</span> para activarla.
+          </p>
+          <p className="text-xs text-slate-400">
+            Si no lo ves en unos minutos, mirá la carpeta de spam o correo no deseado.
+          </p>
+          <button
+            onClick={() => {
+              setCorreoEnviadoA(null);
+              setIsLogin(true);
+            }}
+            className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl transition text-xs"
+          >
+            Ya confirmé mi cuenta, iniciar sesión
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
@@ -160,24 +157,6 @@ export default function AuthPage() {
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
           {!isLogin && (
             <>
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Foto de perfil *</label>
-                <div className="flex items-center gap-4">
-                  <div className="w-16 h-16 rounded-full border-2 border-dashed border-slate-300 bg-slate-50 overflow-hidden flex items-center justify-center shrink-0">
-                    {fotoPreview ? (
-                      <img src={fotoPreview} alt="Vista previa" className="w-full h-full object-cover" />
-                    ) : (
-                      <span className="text-slate-300 text-xl">📷</span>
-                    )}
-                  </div>
-                  <label className="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2.5 rounded-xl transition">
-                    {foto ? 'Cambiar foto' : 'Elegir foto'}
-                    <input type="file" accept="image/*" onChange={handleFotoChange} className="hidden" />
-                  </label>
-                </div>
-                <p className="text-[10px] text-slate-400 mt-1.5">Obligatoria. Máximo {MAX_FOTO_MB} MB.</p>
-              </div>
-
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Nombre Completo *</label>
                 <input
@@ -273,6 +252,16 @@ export default function AuthPage() {
               className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:border-slate-900"
               required
             />
+            {!isLogin && (
+              <p className="text-[10px] text-slate-400 mt-1.5">Mínimo {LARGO_MINIMO_CONTRASEÑA} caracteres.</p>
+            )}
+            {isLogin && (
+              <div className="text-right mt-1.5">
+                <Link href="/auth/olvide" className="text-[11px] font-semibold text-slate-500 hover:text-slate-900 transition">
+                  ¿Olvidaste tu contraseña?
+                </Link>
+              </div>
+            )}
           </div>
 
           <button
