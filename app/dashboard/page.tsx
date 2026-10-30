@@ -1,628 +1,457 @@
-'use client';
+import Link from 'next/link';
+import type { Metadata } from 'next';
+import { SECCIONES_MATERIAS } from '@/lib/materias';
 
-import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabaseClient';
-import { useRouter } from 'next/navigation';
-import { SECCIONES_MATERIAS, normalizar, seccionesDeMateria } from '@/lib/materias';
+// Cómo se ve el link cuando se comparte por WhatsApp, Instagram, etc.
+export const metadata: Metadata = {
+  metadataBase: new URL('https://armando-comunidad.vercel.app'),
+  title: 'Armando Comunidad · Intercambiá clases con compañeros de la FCE-UBA',
+  description:
+    'La plataforma de estudiantes de Ciencias Económicas (UBA) para dar y recibir clases de materias del plan y de otras habilidades. Se paga con horas, no con plata.',
+  openGraph: {
+    title: 'Armando Comunidad',
+    description: 'Dá y recibí clases de apoyo con compañeros de la FCE-UBA. Se paga con horas, no con plata.',
+    url: '/',
+    siteName: 'Armando Comunidad',
+    locale: 'es_AR',
+    type: 'website',
+    images: [{ url: '/og.png', width: 1200, height: 630, alt: 'Armando Comunidad' }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Armando Comunidad',
+    description: 'Dá y recibí clases de apoyo con compañeros de la FCE-UBA. Se paga con horas, no con plata.',
+    images: ['/og.png'],
+  },
+};
 
-interface Publicacion {
-  id: string;
-  usuario_id: string;
-  titulo: string;
-  materia: string;
-  descripcion: string;
-  tipo: 'ofrece' | 'pide';
-  horas: number;
-  estado: string;
-  clase_inicio: string | null;
-  created_at: string;
-  profiles: {
-    id: string;
-    nombre: string;
-    carrera: string;
-    avatar_url: string;
-    es_ingresante: boolean;
-  };
-}
+// ---------------------------------------------------------------------
+// AUSPICIANTE (sponsor). Hoy: Café de Fénix.
+// Para cambiar de auspiciante: reemplazá los textos de este bloque (y el logo).
+// Para ocultarlo: poné activo: false.
+// Campos opcionales (dejalos con '' si no los tenés): oferta, direccion, enlace, logo.
+// El logo se guarda en la carpeta public; por ejemplo '/sponsor-logo.png'.
+// ---------------------------------------------------------------------
+const SPONSOR = {
+  activo: true,
+  nombre: 'Café de Fénix',
+  descripcion: 'Un café sobre la calle Junín, a pasos de la Facultad de Ciencias Económicas, para hacer una pausa entre clases.',
+  oferta: '', // Ejemplo: '10% de descuento mostrando tu perfil de Armando Comunidad'
+  direccion: '', // Ejemplo: 'Junín 1234, CABA' (agregá el número real)
+  enlace: '', // Instagram, sitio web o Google Maps del café
+  textoBoton: 'Conocer el café',
+  logo: '', // Ejemplo: '/sponsor-logo.png'
+};
 
-type EstadoVisual = 'disponible' | 'tomada' | 'pasada';
+// Cantidad de materias del plan que hay cargadas en la app (sin repetir)
+const TOTAL_MATERIAS = new Set(SECCIONES_MATERIAS.flatMap((s) => s.materias)).size;
 
-const AVATAR_DEFAULT =
-  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300';
+const EJEMPLOS_MATERIAS = [
+  'Análisis Matemático I',
+  'Microeconomía I',
+  'Macroeconomía I',
+  'Contabilidad Financiera',
+  'Estadística I',
+  'Marketing',
+  'Administración de Operaciones',
+  'Econometría I',
+];
 
-const ORDEN_ESTADO: Record<EstadoVisual, number> = { disponible: 0, tomada: 1, pasada: 2 };
+const EJEMPLOS_HABILIDADES = [
+  'Excel',
+  'Inglés',
+  'Programación',
+  'Oratoria',
+  'Finanzas personales',
+  'Armado de CV',
+  'Presentaciones',
+];
 
-export default function DashboardPage() {
-  const router = useRouter();
-  const [meId, setMeId] = useState<string | null>(null);
-  const [ahora, setAhora] = useState<number | null>(null);
-  const [publicaciones, setPublicaciones] = useState<Publicacion[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filtro, setFiltro] = useState<'todas' | 'ofrece' | 'pide'>('todas');
-  const [estadoFiltro, setEstadoFiltro] = useState<'todos' | EstadoVisual>('todos');
-  // 'todas' | id de sección (cbc, contador, ...) | 'otras' (materias escritas a mano)
-  const [carreraFiltro, setCarreraFiltro] = useState('todas');
-  const [busqueda, setBusqueda] = useState('');
+const PASOS = [
+  {
+    titulo: 'Registrate con tu correo de la facultad',
+    texto: 'Recibís 3 horas de bienvenida (5 si sos ingresante) para empezar a pedir ayuda desde el primer día.',
+  },
+  {
+    titulo: 'Publicá o buscá ayuda',
+    texto: 'Elegí la materia de la lista del plan de estudios, o escribí otra habilidad, y contá qué necesitás o qué podés enseñar.',
+  },
+  {
+    titulo: 'Coordiná por chat',
+    texto: 'El tutor propone día y hora. Cuando el alumno acepta, su hora queda reservada en garantía.',
+  },
+  {
+    titulo: 'Dá la clase y dejá tu reseña',
+    texto: 'Al terminar, el alumno confirma que se hizo: la hora pasa al tutor y se publica una reseña.',
+  },
+];
 
-  // Modal de nueva publicación
-  const [modalOpen, setModalOpen] = useState(false);
-  const [titulo, setTitulo] = useState('');
-  const [descripcion, setDescripcion] = useState('');
-  const [tipo, setTipo] = useState<'ofrece' | 'pide'>('ofrece');
-  const [horas, setHoras] = useState(1);
-  const [submitting, setSubmitting] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
+const BENEFICIOS = [
+  {
+    icono: '🪙',
+    titulo: 'Sin plata de por medio',
+    texto: 'Todo se paga con horas: lo que enseñás hoy lo usás mañana para aprender otra materia.',
+  },
+  {
+    icono: '🎓',
+    titulo: 'Solo para la FCE',
+    texto: 'Para registrarte hace falta tu correo institucional, así sabés que hablás con compañeros.',
+  },
+  {
+    icono: '🔒',
+    titulo: 'Horas en garantía',
+    texto: 'La hora del alumno queda reservada y solo se acredita cuando la clase se realizó.',
+  },
+  {
+    icono: '⭐',
+    titulo: 'Reputación real',
+    texto: 'Reseñas con estrellas y etiquetas para elegir tutores con confianza.',
+  },
+  {
+    icono: '🌱',
+    titulo: 'Ingresantes primero',
+    texto: 'Distintivo especial y 5 horas de bienvenida para quienes recién empiezan.',
+  },
+  {
+    icono: '📚',
+    titulo: 'Materias del plan y más',
+    texto: 'Lista estandarizada del ciclo general y de cada carrera, y lugar para otras habilidades.',
+  },
+];
 
-  // Selector de materia: "lista" (estandarizada) o "manual" (otra materia)
-  const [materiaModo, setMateriaModo] = useState<'lista' | 'manual'>('lista');
-  const [materiaBusqueda, setMateriaBusqueda] = useState('');
-  const [materiaSel, setMateriaSel] = useState('');
-  const [materiaManual, setMateriaManual] = useState('');
-  const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
+const PREGUNTAS = [
+  {
+    pregunta: '¿Cuánto cuesta?',
+    respuesta: 'Nada. Las clases se pagan con horas que ganás enseñando.',
+  },
+  {
+    pregunta: '¿Quién puede usarla?',
+    respuesta: 'Estudiantes de la FCE-UBA con correo @campus.economicas.uba.ar.',
+  },
+  {
+    pregunta: '¿Solo se pueden dar clases de materias de la facultad?',
+    respuesta:
+      'No. Además de las materias del plan podés ofrecer o buscar otras habilidades, como Excel, idiomas o programación: al publicar elegís «Otra materia» y la escribís.',
+  },
+  {
+    pregunta: '¿Cuántas horas me dan al empezar?',
+    respuesta: '3 horas de bienvenida. Si te registrás como ingresante, 5.',
+  },
+  {
+    pregunta: '¿Cuánto dura una clase?',
+    respuesta: 'Lo que indica la publicación: de 1 a 5 horas. Esa es también la cantidad de horas que se usan.',
+  },
+  {
+    pregunta: '¿Y si la clase no se hace?',
+    respuesta:
+      'El alumno puede marcar que no se realizó y su hora vuelve a su saldo. El tutor puede dejar una reseña contando lo que pasó.',
+  },
+];
 
-  // Sugerencias agrupadas por sección (CBC primero, después cada carrera)
-  const consulta = normalizar(materiaBusqueda);
-  const gruposSugerencias = SECCIONES_MATERIAS.map((seccion, i) => ({
-    numero: i + 1,
-    seccion,
-    materias: seccion.materias.filter((m) => !consulta || normalizar(m).includes(consulta)),
-  })).filter((g) => g.materias.length > 0);
-
-  const fetchPublicaciones = async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('publicaciones')
-      .select(`
-        id,
-        usuario_id,
-        titulo,
-        materia,
-        descripcion,
-        tipo,
-        horas,
-        estado,
-        clase_inicio,
-        created_at,
-        profiles (
-          id,
-          nombre,
-          carrera,
-          avatar_url,
-          es_ingresante
-        )
-      `)
-      .in('estado', ['activa', 'en_proceso'])
-      .order('created_at', { ascending: false });
-
-    if (!error && data) {
-      setPublicaciones(data as unknown as Publicacion[]);
-    }
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    setAhora(Date.now());
-    supabase.auth.getUser().then(({ data }) => setMeId(data.user?.id ?? null));
-    fetchPublicaciones();
-  }, []);
-
-  // Disponible → se puede contactar | Tomada → clase coordinada | Pasada → la clase ya terminó
-  const estadoVisual = (p: Publicacion): EstadoVisual => {
-    if (p.estado !== 'en_proceso') return 'disponible';
-    if (p.clase_inicio && ahora !== null) {
-      const fin = new Date(p.clase_inicio).getTime() + (p.horas || 1) * 60 * 60 * 1000;
-      if (ahora >= fin) return 'pasada';
-    }
-    return 'tomada';
-  };
-
-  const formatearClase = (iso: string | null) => {
-    if (!iso) return '';
-    return new Date(iso).toLocaleString('es-AR', {
-      day: '2-digit',
-      month: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  const elegirMateria = (nombre: string) => {
-    setMateriaSel(nombre);
-    setMateriaBusqueda(nombre);
-    setMostrarSugerencias(false);
-  };
-
-  const activarManual = () => {
-    setMateriaModo('manual');
-    setMateriaSel('');
-    setMostrarSugerencias(false);
-  };
-
-  const volverALista = () => {
-    setMateriaModo('lista');
-    setMateriaManual('');
-  };
-
-  const resetFormulario = () => {
-    setTitulo('');
-    setDescripcion('');
-    setTipo('ofrece');
-    setHoras(1);
-    setMateriaModo('lista');
-    setMateriaBusqueda('');
-    setMateriaSel('');
-    setMateriaManual('');
-  };
-
-  const handleCrearPublicacion = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMsg('');
-
-    const materiaFinal = materiaModo === 'lista' ? materiaSel : materiaManual.trim();
-    if (!materiaFinal) {
-      setErrorMsg(
-        materiaModo === 'lista'
-          ? 'Elegí una materia de la lista o usá «Otra materia».'
-          : 'Escribí el nombre de la materia.'
-      );
-      return;
-    }
-
-    setSubmitting(true);
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      setErrorMsg('Debes estar autenticado para publicar.');
-      setSubmitting(false);
-      return;
-    }
-
-    const { error } = await supabase.from('publicaciones').insert([
-      {
-        usuario_id: user.id,
-        titulo,
-        materia: materiaFinal,
-        descripcion,
-        tipo,
-        horas,
-        estado: 'activa',
-      },
-    ]);
-
-    if (error) {
-      setErrorMsg(`Error al publicar: ${error.message}`);
-      setSubmitting(false);
-      return;
-    }
-
-    resetFormulario();
-    setSubmitting(false);
-    setModalOpen(false);
-    fetchPublicaciones();
-  };
-
-  const handleContactar = (pub: Publicacion) => {
-    router.push(`/dashboard/chat?pub=${pub.id}`);
-  };
-
-  const coincideCarrera = (p: Publicacion) => {
-    if (carreraFiltro === 'todas') return true;
-    const secciones = seccionesDeMateria(p.materia ?? '');
-    if (carreraFiltro === 'otras') return secciones.length === 0;
-    return secciones.includes(carreraFiltro);
-  };
-
-  const publicacionesFiltradas = publicaciones
-    .filter((p) => {
-      const coincideTipo = filtro === 'todas' || p.tipo === filtro;
-      const coincideEstado = estadoFiltro === 'todos' || estadoVisual(p) === estadoFiltro;
-      if (!coincideTipo || !coincideEstado || !coincideCarrera(p)) return false;
-
-      const q = normalizar(busqueda);
-      if (!q) return true;
-
-      return (
-        normalizar(p.materia ?? '').includes(q) ||
-        normalizar(p.titulo ?? '').includes(q) ||
-        normalizar(p.descripcion ?? '').includes(q) ||
-        normalizar(p.profiles?.nombre ?? '').includes(q)
-      );
-    })
-    // Disponibles primero, después tomadas, y las pasadas al final
-    .sort((a, b) => ORDEN_ESTADO[estadoVisual(a)] - ORDEN_ESTADO[estadoVisual(b)]);
-
-  const botonFiltro = (activo: boolean) =>
-    `px-4 py-1.5 rounded-full transition ${
-      activo ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-100'
-    }`;
-
+export default function Inicio() {
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-extrabold text-slate-900">Muro de la Comunidad</h1>
-          <p className="text-xs text-slate-500">Intercambio de horas académicas en FCE</p>
+    <div className="min-h-screen bg-white text-slate-800">
+      {/* Encabezado */}
+      <header className="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-slate-200/80">
+        <div className="max-w-6xl mx-auto px-5 py-3 flex items-center justify-between gap-3">
+          <Link href="/" className="flex items-center gap-2.5">
+            <img src="/logo.png" alt="Armando Comunidad" className="w-10 h-10 object-contain" />
+            <span className="text-base font-black text-slate-900 tracking-tight">Armando Comunidad</span>
+          </Link>
+          <nav className="flex items-center gap-2">
+            <Link
+              href="/auth"
+              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition"
+            >
+              Ingresar
+            </Link>
+            <Link
+              href="/auth?registro=1"
+              className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 transition"
+            >
+              Crear cuenta
+            </Link>
+          </nav>
         </div>
+      </header>
 
-        <button
-          onClick={() => setModalOpen(true)}
-          className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-5 py-2.5 rounded-2xl text-xs shadow-sm transition"
-        >
-          + Crear Publicación
-        </button>
-      </div>
-
-      <div className="space-y-3">
-        <input
-          type="text"
-          value={busqueda}
-          onChange={(e) => setBusqueda(e.target.value)}
-          placeholder="Buscar por materia, tema o estudiante..."
-          className="w-full px-5 py-3 rounded-2xl bg-white border border-slate-200/80 text-xs focus:outline-none focus:border-slate-900 transition shadow-sm"
-        />
-
-        <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3 text-xs font-semibold">
-          <button onClick={() => setFiltro('todas')} className={botonFiltro(filtro === 'todas')}>
-            Todas
-          </button>
-          <button onClick={() => setFiltro('ofrece')} className={botonFiltro(filtro === 'ofrece')}>
-            Se Ofrecen
-          </button>
-          <button onClick={() => setFiltro('pide')} className={botonFiltro(filtro === 'pide')}>
-            Se Buscan
-          </button>
-
-          <span className="mx-2 h-4 w-px bg-slate-300" />
-
-          <button onClick={() => setEstadoFiltro('todos')} className={botonFiltro(estadoFiltro === 'todos')}>
-            Todos los estados
-          </button>
-          <button onClick={() => setEstadoFiltro('disponible')} className={botonFiltro(estadoFiltro === 'disponible')}>
-            Disponibles
-          </button>
-          <button onClick={() => setEstadoFiltro('tomada')} className={botonFiltro(estadoFiltro === 'tomada')}>
-            Tomadas
-          </button>
-          <button onClick={() => setEstadoFiltro('pasada')} className={botonFiltro(estadoFiltro === 'pasada')}>
-            Pasadas
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2 text-xs">
-          <span className="font-bold text-slate-500">Carrera:</span>
-          <select
-            value={carreraFiltro}
-            onChange={(e) => setCarreraFiltro(e.target.value)}
-            className="px-3 py-2 rounded-xl bg-white text-slate-700 font-semibold border border-slate-200 focus:outline-none focus:border-slate-900 max-w-full"
-          >
-            <option value="todas">Todas las carreras</option>
-            {SECCIONES_MATERIAS.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.nombre}
-              </option>
-            ))}
-            <option value="otras">Otros</option>
-          </select>
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="text-center py-12 text-slate-400 text-xs">Cargando publicaciones...</div>
-      ) : publicacionesFiltradas.length === 0 ? (
-        <div className="bg-white border border-slate-200/80 p-10 rounded-3xl text-center space-y-2">
-          <p className="text-sm font-semibold text-slate-700">No se encontraron publicaciones</p>
-          <p className="text-xs text-slate-400">Intenta con otro filtro o crea una nueva publicación.</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {publicacionesFiltradas.map((pub) => {
-            const esMia = pub.usuario_id === meId;
-            const estado = estadoVisual(pub);
-            const apagada = estado !== 'disponible';
-            const esCBC = seccionesDeMateria(pub.materia ?? '').includes('cbc');
-
-            return (
-              <div
-                key={pub.id}
-                className={`border p-6 rounded-3xl shadow-sm transition flex flex-col sm:flex-row justify-between gap-6 ${
-                  estado === 'pasada'
-                    ? 'bg-slate-100/70 border-slate-200 opacity-75'
-                    : estado === 'tomada'
-                    ? 'bg-amber-50/60 border-amber-200'
-                    : 'bg-white border-slate-200/80 hover:border-slate-300'
-                }`}
+      {/* Portada */}
+      <section className="bg-slate-900 text-white">
+        <div className="max-w-6xl mx-auto px-5 py-16 sm:py-24 grid md:grid-cols-2 gap-12 items-center">
+          <div className="space-y-6">
+            <span className="inline-block text-[11px] font-extrabold uppercase tracking-widest text-[#d8a58d] bg-white/10 px-3 py-1.5 rounded-full">
+              Para estudiantes de la FCE-UBA
+            </span>
+            <h1 className="text-4xl sm:text-5xl font-black leading-tight tracking-tight">
+              Aprendé y enseñá con tus compañeros. Pagá con horas, no con plata.
+            </h1>
+            <p className="text-base sm:text-lg text-slate-300 leading-relaxed">
+              Armando Comunidad conecta a estudiantes de Ciencias Económicas para dar y recibir clases de apoyo:
+              materias del plan de estudios y también otras habilidades que quieras sumar. Das una clase, ganás
+              una hora; pedís una clase, usás una hora.
+            </p>
+            <div className="flex flex-wrap gap-3 pt-2">
+              <Link
+                href="/auth?registro=1"
+                className="px-6 py-3.5 rounded-2xl text-sm font-bold bg-white text-slate-900 hover:bg-slate-100 transition"
               >
-                <div className="space-y-3 flex-1">
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => router.push(`/dashboard/usuarios/${pub.profiles?.id}`)}
-                      className="flex items-center gap-3 text-left hover:opacity-80 transition"
-                    >
-                      <img
-                        src={pub.profiles?.avatar_url || AVATAR_DEFAULT}
-                        alt={pub.profiles?.nombre || 'Usuario'}
-                        className="w-10 h-10 rounded-full object-cover border border-slate-200"
-                      />
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-slate-900 hover:underline">
-                            {pub.profiles?.nombre || 'Estudiante'}
-                          </span>
-                          {pub.profiles?.es_ingresante && (
-                            <span className="bg-slate-100 text-slate-700 text-[9px] font-bold px-2 py-0.5 rounded-full border border-slate-200">
-                              Ingresante
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-[10px] text-slate-400 block">{pub.profiles?.carrera}</span>
-                      </div>
-                    </button>
-                  </div>
-
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <span
-                        className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
-                          pub.tipo === 'ofrece'
-                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                            : 'bg-rose-100 text-rose-800 border border-rose-200'
-                        }`}
-                      >
-                        {pub.tipo === 'ofrece' ? 'Ofrece Ayuda' : 'Busca Ayuda'}
-                      </span>
-                      <span className="text-xs font-bold text-slate-600">• {pub.materia}</span>
-                      {esCBC && (
-                        <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
-                          CBC
-                        </span>
-                      )}
-
-                      {estado === 'tomada' && (
-                        <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
-                          🤝 Tomada{pub.clase_inicio ? ` · clase ${formatearClase(pub.clase_inicio)} hs` : ''}
-                        </span>
-                      )}
-                      {estado === 'pasada' && (
-                        <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-slate-200 text-slate-600 border border-slate-300">
-                          ✓ Pasada{pub.clase_inicio ? ` · ${formatearClase(pub.clase_inicio)} hs` : ''}
-                        </span>
-                      )}
-                    </div>
-                    <h3 className="text-base font-bold text-slate-900">{pub.titulo}</h3>
-                    <p className="text-xs text-slate-600 mt-1">{pub.descripcion}</p>
-                  </div>
-                </div>
-
-                <div
-                  className={`flex sm:flex-col items-center sm:items-end justify-between sm:justify-center border-t sm:border-t-0 sm:border-l pt-4 sm:pt-0 sm:pl-6 gap-4 ${
-                    estado === 'tomada' ? 'border-amber-100' : 'border-slate-100'
-                  }`}
-                >
-                  <div className="text-left sm:text-right">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Valor
-                    </span>
-                    <span className="text-lg font-black text-slate-900">
-                      {pub.horas} {pub.horas === 1 ? 'Hora' : 'Horas'}
-                    </span>
-                  </div>
-
-                  {apagada ? (
-                    <span className="text-xs font-bold text-slate-400 px-2">
-                      {estado === 'tomada' ? 'Ya no disponible' : 'Finalizada'}
-                    </span>
-                  ) : esMia ? (
-                    <span className="text-xs font-bold text-slate-400 px-2">Tu publicación</span>
-                  ) : (
-                    <button
-                      onClick={() => handleContactar(pub)}
-                      className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-5 py-2.5 rounded-2xl text-xs transition shadow-sm"
-                    >
-                      Contactar
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Modal Nueva Publicación */}
-      {modalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-xl border border-slate-200 space-y-5 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center">
-              <h2 className="text-lg font-extrabold text-slate-900">Nueva Publicación</h2>
-              <button
-                onClick={() => setModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 text-sm font-bold"
+                Crear mi cuenta
+              </Link>
+              <Link
+                href="/auth"
+                className="px-6 py-3.5 rounded-2xl text-sm font-bold border border-white/30 text-white hover:bg-white/10 transition"
               >
-                ✕
-              </button>
+                Ya tengo cuenta
+              </Link>
             </div>
+            <p className="text-xs text-slate-400">Gratis · Solo con tu correo @campus.economicas.uba.ar</p>
+          </div>
 
-            {errorMsg && (
-              <div className="bg-red-50 border border-red-200 text-red-700 text-xs p-3 rounded-xl font-medium">
-                {errorMsg}
+          {/* Ejemplo ilustrativo de una publicación */}
+          <div className="relative">
+            <div className="bg-white text-slate-800 rounded-3xl p-6 shadow-2xl space-y-4 max-w-md mx-auto">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Ejemplo de publicación</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
+                  Ofrece ayuda
+                </span>
+                <span className="text-xs font-bold text-slate-600">• Análisis Matemático I</span>
+                <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
+                  CBC
+                </span>
               </div>
-            )}
-
-            <form onSubmit={handleCrearPublicacion} className="space-y-4 text-xs">
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Tipo de Publicación</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setTipo('ofrece')}
-                    className={`py-2 rounded-xl font-bold transition border ${
-                      tipo === 'ofrece'
-                        ? 'bg-slate-900 text-white border-slate-900'
-                        : 'bg-white text-slate-600 border-slate-200'
-                    }`}
-                  >
-                    Ofrezco Ayuda
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTipo('pide')}
-                    className={`py-2 rounded-xl font-bold transition border ${
-                      tipo === 'pide'
-                        ? 'bg-slate-900 text-white border-slate-900'
-                        : 'bg-white text-slate-600 border-slate-200'
-                    }`}
-                  >
-                    Busco Ayuda
-                  </button>
+                <h3 className="text-lg font-bold text-slate-900">Repaso para el primer parcial</h3>
+                <p className="text-sm text-slate-600 mt-1">
+                  Resolvemos juntos ejercicios de límites y derivadas, con material de práctica.
+                </p>
+              </div>
+              <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Valor</span>
+                  <span className="text-lg font-black text-slate-900">1 Hora</span>
                 </div>
+                <span className="bg-slate-900 text-white font-bold px-5 py-2.5 rounded-2xl text-xs">Contactar</span>
               </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Título</label>
-                <input
-                  type="text"
-                  required
-                  value={titulo}
-                  onChange={(e) => setTitulo(e.target.value)}
-                  placeholder="Ej. Repaso de ejercicios para el primer parcial"
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:border-slate-900"
-                />
-              </div>
-
-              {/* Materia: lista estandarizada (CBC y carreras) u "Otra" escrita a mano */}
-              <div className="relative">
-                <label className="block font-semibold text-slate-700 mb-1">Materia</label>
-
-                {materiaModo === 'lista' ? (
-                  <>
-                    <input
-                      type="text"
-                      value={materiaBusqueda}
-                      onChange={(e) => {
-                        setMateriaBusqueda(e.target.value);
-                        setMateriaSel('');
-                        setMostrarSugerencias(true);
-                      }}
-                      onFocus={() => setMostrarSugerencias(true)}
-                      onBlur={() => setMostrarSugerencias(false)}
-                      placeholder="Escribí para buscar o elegí de la lista"
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:border-slate-900"
-                    />
-
-                    {mostrarSugerencias && (
-                      <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-64 overflow-y-auto z-10">
-                        <button
-                          type="button"
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            activarManual();
-                          }}
-                          className="w-full text-left px-4 py-2.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border-b border-slate-100 transition sticky top-0"
-                        >
-                          ✏️ Otra materia (escribir a mano)
-                        </button>
-
-                        {gruposSugerencias.length === 0 && (
-                          <p className="px-4 py-3 text-xs text-slate-400">
-                            No hay coincidencias. Probá con «Otra materia».
-                          </p>
-                        )}
-
-                        {gruposSugerencias.map((g) => (
-                          <div key={g.seccion.id}>
-                            <div className="px-4 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 bg-slate-50">
-                              {g.seccion.nombre}
-                            </div>
-                            {g.materias.map((m) => (
-                              <button
-                                key={g.seccion.id + m}
-                                type="button"
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  elegirMateria(m);
-                                }}
-                                className="w-full text-left px-4 py-2 text-xs hover:bg-slate-50 transition"
-                              >
-                                {m}
-                              </button>
-                            ))}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {materiaSel && (
-                      <p className="text-[10px] font-bold text-emerald-700 mt-1">✓ Materia oficial seleccionada</p>
-                    )}
-                  </>
+      {/* Auspiciante: banda debajo de la portada */}
+      {SPONSOR.activo && (
+        <div className="bg-slate-50 border-b border-slate-200/80">
+          <div className="max-w-6xl mx-auto px-5 py-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-slate-500">
+            <span className="font-bold uppercase tracking-widest text-[10px] text-slate-400">Con el apoyo de</span>
+            {SPONSOR.enlace ? (
+              <a
+                href={SPONSOR.enlace}
+                target="_blank"
+                rel="sponsored noopener noreferrer"
+                className="inline-flex items-center gap-2 font-bold text-slate-800 hover:underline"
+              >
+                {SPONSOR.logo ? (
+                  <img src={SPONSOR.logo} alt={SPONSOR.nombre} className="h-6 w-auto object-contain" />
                 ) : (
-                  <div className="space-y-2">
-                    <input
-                      type="text"
-                      value={materiaManual}
-                      onChange={(e) => setMateriaManual(e.target.value)}
-                      placeholder="Escribí el nombre de la materia o tema"
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:border-slate-900"
-                    />
-                    <button
-                      type="button"
-                      onClick={volverALista}
-                      className="text-[11px] font-bold text-indigo-700 hover:underline"
-                    >
-                      ← Volver a la lista de materias
-                    </button>
-                  </div>
+                  <span>☕</span>
                 )}
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Duración de la clase y valor (horas)</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="5"
-                  required
-                  value={horas}
-                  onChange={(e) => setHoras(Number(e.target.value))}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:border-slate-900"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Descripción</label>
-                <textarea
-                  required
-                  rows={3}
-                  value={descripcion}
-                  onChange={(e) => setDescripcion(e.target.value)}
-                  placeholder="Explicá brevemente la dinámica..."
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:border-slate-900 resize-none"
-                />
-              </div>
-
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(false)}
-                  className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 rounded-xl transition disabled:opacity-50"
-                >
-                  {submitting ? 'Publicando...' : 'Publicar'}
-                </button>
-              </div>
-            </form>
+                {SPONSOR.nombre}
+              </a>
+            ) : (
+              <span className="inline-flex items-center gap-2 font-bold text-slate-800">
+                {SPONSOR.logo ? (
+                  <img src={SPONSOR.logo} alt={SPONSOR.nombre} className="h-6 w-auto object-contain" />
+                ) : (
+                  <span>☕</span>
+                )}
+                {SPONSOR.nombre}
+              </span>
+            )}
           </div>
         </div>
       )}
+
+      {/* Cómo funciona */}
+      <section className="max-w-6xl mx-auto px-5 py-16 sm:py-20">
+        <div className="text-center max-w-2xl mx-auto space-y-3">
+          <h2 className="text-3xl font-black text-slate-900 tracking-tight">Cómo funciona</h2>
+          <p className="text-slate-500">Cuatro pasos, sin vueltas.</p>
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5 mt-10">
+          {PASOS.map((paso, i) => (
+            <div key={paso.titulo} className="bg-slate-50 border border-slate-200/80 rounded-3xl p-6 space-y-3">
+              <span className="w-9 h-9 rounded-full bg-slate-900 text-white font-black flex items-center justify-center text-sm">
+                {i + 1}
+              </span>
+              <h3 className="text-base font-bold text-slate-900">{paso.titulo}</h3>
+              <p className="text-sm text-slate-600 leading-relaxed">{paso.texto}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Materias del plan y otras habilidades */}
+      <section className="max-w-6xl mx-auto px-5 pb-16 sm:pb-20">
+        <div className="text-center max-w-2xl mx-auto space-y-3">
+          <h2 className="text-3xl font-black text-slate-900 tracking-tight">
+            Materias del plan y habilidades que quieras sumar
+          </h2>
+          <p className="text-slate-500">
+            Encontrá ayuda para cursar y también para aprender o enseñar lo que no está en el plan de estudios.
+          </p>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-5 mt-10">
+          <div className="bg-white border border-slate-200/80 rounded-3xl p-7 space-y-4 shadow-sm">
+            <p className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Del plan de estudios</p>
+            <h3 className="text-xl font-black text-slate-900">{TOTAL_MATERIAS} materias de la facultad</h3>
+            <p className="text-sm text-slate-600 leading-relaxed">
+              Del ciclo general (CBC) y de todas las carreras: Contador Público, Administración, Sistemas de
+              Información, Actuario y la Tecnicatura, con nombres estandarizados para que todos busquen igual.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {EJEMPLOS_MATERIAS.map((m) => (
+                <span
+                  key={m}
+                  className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200"
+                >
+                  {m}
+                </span>
+              ))}
+              <span className="text-[11px] font-bold px-3 py-1.5 text-slate-400">y muchas más…</span>
+            </div>
+          </div>
+
+          <div className="bg-white border border-slate-200/80 rounded-3xl p-7 space-y-4 shadow-sm">
+            <p className="text-[10px] font-extrabold uppercase tracking-widest text-[#b87a5e]">Otras habilidades</p>
+            <h3 className="text-xl font-black text-slate-900">Todo lo que quieras aprender o enseñar</h3>
+            <p className="text-sm text-slate-600 leading-relaxed">
+              No hace falta que esté en el plan. Al publicar elegís «Otra materia», escribís la habilidad y listo: se
+              coordina y se paga con horas, igual que cualquier clase.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {EJEMPLOS_HABILIDADES.map((h) => (
+                <span
+                  key={h}
+                  className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200"
+                >
+                  {h}
+                </span>
+              ))}
+              <span className="text-[11px] font-bold px-3 py-1.5 text-slate-400">Algunos ejemplos</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Beneficios */}
+      <section className="bg-slate-50 border-y border-slate-200/80">
+        <div className="max-w-6xl mx-auto px-5 py-16 sm:py-20">
+          <div className="text-center max-w-2xl mx-auto space-y-3">
+            <h2 className="text-3xl font-black text-slate-900 tracking-tight">Pensada para la comunidad de Económicas</h2>
+            <p className="text-slate-500">Una forma simple y justa de ayudarnos entre nosotros.</p>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 mt-10">
+            {BENEFICIOS.map((b) => (
+              <div key={b.titulo} className="bg-white border border-slate-200/80 rounded-3xl p-6 space-y-2 shadow-sm">
+                <span className="text-2xl">{b.icono}</span>
+                <h3 className="text-base font-bold text-slate-900">{b.titulo}</h3>
+                <p className="text-sm text-slate-600 leading-relaxed">{b.texto}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Auspiciante: tarjeta con más detalle */}
+      {SPONSOR.activo && (
+        <section className="max-w-4xl mx-auto px-5 pb-4 pt-16">
+          <div className="bg-amber-50/60 border border-amber-200 rounded-3xl p-8 sm:p-10 flex flex-col sm:flex-row items-center gap-8">
+            <div className="shrink-0 w-28 h-28 rounded-3xl bg-white border border-amber-200 flex items-center justify-center overflow-hidden">
+              {SPONSOR.logo ? (
+                <img src={SPONSOR.logo} alt={SPONSOR.nombre} className="w-full h-full object-contain p-3" />
+              ) : (
+                <span className="text-5xl">☕</span>
+              )}
+            </div>
+
+            <div className="space-y-3 text-center sm:text-left">
+              <p className="text-[10px] font-extrabold uppercase tracking-widest text-amber-700">Auspiciante</p>
+              <h2 className="text-2xl font-black text-slate-900 tracking-tight">{SPONSOR.nombre}</h2>
+              <p className="text-sm text-slate-600 leading-relaxed">{SPONSOR.descripcion}</p>
+
+              {SPONSOR.oferta && (
+                <p className="text-sm font-bold text-slate-900 bg-white border border-amber-200 rounded-2xl px-4 py-3">
+                  🎁 {SPONSOR.oferta}
+                </p>
+              )}
+
+              {SPONSOR.direccion && <p className="text-xs text-slate-500">📍 {SPONSOR.direccion}</p>}
+
+              {SPONSOR.enlace && (
+                <a
+                  href={SPONSOR.enlace}
+                  target="_blank"
+                  rel="sponsored noopener noreferrer"
+                  className="inline-block px-6 py-3 rounded-2xl text-xs font-bold bg-slate-900 text-white hover:bg-slate-800 transition"
+                >
+                  {SPONSOR.textoBoton}
+                </a>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Preguntas frecuentes */}
+      <section className="max-w-3xl mx-auto px-5 py-16 sm:py-20">
+        <h2 className="text-3xl font-black text-slate-900 tracking-tight text-center">Preguntas frecuentes</h2>
+        <div className="mt-8 space-y-3">
+          {PREGUNTAS.map((p) => (
+            <details key={p.pregunta} className="group bg-white border border-slate-200/80 rounded-2xl px-5 py-4">
+              <summary className="cursor-pointer list-none flex items-center justify-between gap-4 text-sm font-bold text-slate-900">
+                {p.pregunta}
+                <span className="text-slate-400 group-open:rotate-45 transition text-lg leading-none">+</span>
+              </summary>
+              <p className="mt-3 text-sm text-slate-600 leading-relaxed">{p.respuesta}</p>
+            </details>
+          ))}
+        </div>
+      </section>
+
+      {/* Cierre */}
+      <section className="bg-slate-900 text-white">
+        <div className="max-w-3xl mx-auto px-5 py-16 text-center space-y-6">
+          <h2 className="text-3xl font-black tracking-tight">Sumate a la comunidad</h2>
+          <p className="text-slate-300">Creá tu cuenta en un minuto y empezá a intercambiar clases con tus compañeros.</p>
+          <Link
+            href="/auth?registro=1"
+            className="inline-block px-8 py-3.5 rounded-2xl text-sm font-bold bg-white text-slate-900 hover:bg-slate-100 transition"
+          >
+            Crear mi cuenta
+          </Link>
+        </div>
+      </section>
+
+      {/* Pie */}
+      <footer className="bg-white border-t border-slate-200/80">
+        <div className="max-w-6xl mx-auto px-5 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            <img src="/logo.png" alt="" className="w-8 h-8 object-contain" />
+            <p className="text-xs text-slate-500">
+              Armando Comunidad · Intercambio de conocimientos entre estudiantes de la FCE-UBA
+            </p>
+          </div>
+          <div className="flex items-center gap-4 text-xs font-bold text-slate-600">
+            <Link href="/auth" className="hover:text-slate-900 transition">
+              Ingresar
+            </Link>
+            <Link href="/auth?registro=1" className="hover:text-slate-900 transition">
+              Crear cuenta
+            </Link>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
