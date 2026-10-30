@@ -31,11 +31,11 @@ export const metadata: Metadata = {
 // ---------------------------------------------------------------------
 const SPONSOR = {
   activo: false,
-  nombre: 'Nombre del café',
-  descripcion: 'Una frase corta sobre el café: qué lo hace especial y por qué está cerca de la facultad.',
+  nombre: 'Fenix Cafe de Especialidad',
+  descripcion: 'Somos tostadores. En frente de FCE!.',
   oferta: '', // Opcional. Ejemplo: '10% de descuento mostrando tu perfil de Armando Comunidad'
   direccion: '', // Opcional. Ejemplo: 'Av. Córdoba 2122, CABA'
-  enlace: '', // Instagram, sitio web o Google Maps del café
+  enlace: '', // @fenixcafe.ba
   textoBoton: 'Conocer el café',
   logo: '', // Opcional. Ejemplo: '/sponsor-logo.png'
 };
